@@ -48,4 +48,9 @@
 
 Feel free to open issues or submit pull requests if you'd like to add new features, improvements, or bug fixes. Contributions are always welcome!
 
+## **Future Work**:
+
+I plan to add more functionality to this tool, transforming it into a comprehensive solution for all tasks related to assignments in Intune. The goal is to make it a one-stop tool that simplifies the management and retrieval of assignment data for a wide range of resources within Intune.
+
+
    
