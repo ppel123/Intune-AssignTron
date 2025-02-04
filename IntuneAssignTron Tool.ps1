@@ -7,7 +7,7 @@ if (-not (Get-Module -ListAvailable -Name Microsoft.Graph)) {
 }
 
 # Import the Microsoft.Graph module
-Import-Module Microsoft.Graph
+# Import-Module Microsoft.Graph
 
 # Authenticate to Microsoft Graph
 Write-Host "Authenticating to Microsoft Graph..." -ForegroundColor Yellow
@@ -51,7 +51,6 @@ function Get-AllConfigurationProfilesAndAssignedGroups {
 
         # Loop through each endpoint and fetch the data
         foreach ($url in $urls) {
-            Write-Host "Processing endpoint: $url" -ForegroundColor Yellow
             $profiles = Invoke-MgGraphRequest -Uri $url
 
             foreach ($profile in $profiles.value) {
@@ -483,7 +482,6 @@ function Get-AllAppProtectionPoliciesAndAssignedGroups {
 
         # Loop through each endpoint and fetch the data
         foreach ($url in $urls) {
-            Write-Host "Processing endpoint: $url" -ForegroundColor Yellow
             $appProtections = Invoke-MgGraphRequest -Uri $url
 
             foreach ($appProtection in $appProtections.value) {
