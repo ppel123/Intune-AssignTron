@@ -43,6 +43,12 @@
 - **Microsoft Graph API Permissions**: Make sure you have the necessary permissions set up to read Intune configuration data and access group information. This typically includes permissions such as `Group.Read.All`, `DeviceManagementConfiguration.Read.All`, and others depending on the specific resources you're working with.
 
 - **PowerShell**: The script is designed to run in PowerShell, so ensure that PowerShell is installed on your machine. It is compatible with both Windows and Linux environments where PowerShell is available.
+  
+## **Demonstration**:  
+
+![Screenshot_1](https://github.com/user-attachments/assets/26705494-149a-41ea-a374-0ccfabc22279)  
+
+![Screenshot_2](https://github.com/user-attachments/assets/183ebaa2-b724-4a7a-a876-21f98a11655a)   
 
 ## **Contributing**:
 
