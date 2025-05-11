@@ -1,3 +1,10 @@
+# Ensure AssignTron output folder exists
+$assignTronPath = "C:\Temp\AssignTron"
+if (-not (Test-Path -Path $assignTronPath)) {
+    Write-Host "Creating folder $assignTronPath" -ForegroundColor Yellow
+    New-Item -Path $assignTronPath -ItemType Directory | Out-Null
+}
+
 # Check if the Microsoft.Graph module is installed
 if (-not (Get-Module -ListAvailable -Name Microsoft.Graph)) {
     Write-Host "Microsoft.Graph module not found. Installing..." -ForegroundColor Yellow
@@ -6,13 +13,10 @@ if (-not (Get-Module -ListAvailable -Name Microsoft.Graph)) {
     Write-Host "Microsoft.Graph module is already installed." -ForegroundColor Green
 }
 
-# Import the Microsoft.Graph module
-# Import-Module Microsoft.Graph
-
 # Authenticate to Microsoft Graph
 Write-Host "Authenticating to Microsoft Graph..." -ForegroundColor Yellow
 try {
-    Connect-MgGraph -scopes Group.Read.All, DeviceManagementManagedDevices.Read.All, DeviceManagementServiceConfig.Read.All, DeviceManagementApps.Read.All, DeviceManagementApps.Read.All, DeviceManagementConfiguration.Read.All, DeviceManagementConfiguration.ReadWrite.All, DeviceManagementApps.ReadWrite.All
+    Connect-MgGraph -Scopes Group.Read.All,DeviceManagementManagedDevices.Read.All,DeviceManagementServiceConfig.Read.All,DeviceManagementApps.Read.All,DeviceManagementConfiguration.Read.All,DeviceManagementConfiguration.ReadWrite.All,DeviceManagementApps.ReadWrite.All
     Write-Host "Authentication successful!" -ForegroundColor Green
 } catch {
     Write-Host "Error during authentication: $_" -ForegroundColor Red
@@ -24,75 +28,74 @@ try {
 Fetches all configuration profiles and their assigned groups, including handling built-in groups like "All Devices" and "All Users".
 
 .DESCRIPTION
-This function retrieves all configuration profiles from Intune, including configuration policies, device configurations, group policy configurations, and mobile app configurations. 
-It checks each profile's assignment to determine which group it is assigned to, and handles built-in groups like "All Devices" and "All Users" by using special identifiers. 
-The function processes multiple group assignments for each profile and returns a list of profiles and their assigned groups.
+This function retrieves all configuration profiles from Intune, including configuration policies, device configurations,
+group policy configurations, and mobile app configurations. It checks each profile's assignments to determine
+which group it is assigned to, handles built-in assignment targets ("All Devices", "All Users"), and also processes
+exclusion assignments. Returns a list of profiles with their assigned group names and modes.
 
 .EXAMPLE
 $profileAssignments = Get-AllConfigurationProfilesAndAssignedGroups
-This example retrieves all configuration profiles and their assigned groups, and stores the results in the `$profileAssignments` variable.
+This example retrieves all configuration profiles and their assigned groups, storing the results in `$profileAssignments`.
 
 .NOTES
-The function uses the Microsoft Graph API to fetch configuration profiles and assignments. It handles both standard and built-in Intune groups.
-Ensure that you have the necessary permissions (e.g., `DeviceManagementConfiguration.Read.All`, `Group.Read.All`) to run this function.
+Requires permissions: DeviceManagementConfiguration.Read.All, DeviceManagementConfiguration.ReadWrite.All, Group.Read.All.
 #>
 function Get-AllConfigurationProfilesAndAssignedGroups {
+    Write-Host ">> Starting Get-AllConfigurationProfilesAndAssignedGroups" -ForegroundColor Cyan
     Write-Host "Fetching all Configuration Profiles and their Assigned Groups..." -ForegroundColor Yellow
     try {
-        # Define the endpoints for different types of configuration profiles
         $urls = @(
-            "https://graph.microsoft.com/beta/deviceManagement/configurationPolicies?`$expand=Assignments",
-            "https://graph.microsoft.com/beta/deviceManagement/deviceConfigurations?`$expand=Assignments",
-            "https://graph.microsoft.com/beta/deviceManagement/groupPolicyConfigurations?`$expand=Assignments",
-            "https://graph.microsoft.com/beta/deviceAppManagement/mobileAppConfigurations?`$expand=Assignments"
+            "https://graph.microsoft.com/beta/deviceManagement/configurationPolicies?`$expand=assignments",
+            "https://graph.microsoft.com/beta/deviceManagement/deviceConfigurations?`$expand=assignments",
+            "https://graph.microsoft.com/beta/deviceManagement/groupPolicyConfigurations?`$expand=assignments",
+            "https://graph.microsoft.com/beta/deviceAppManagement/mobileAppConfigurations?`$expand=assignments"
         )
-
         $profileAssignments = @()
-
-        # Loop through each endpoint and fetch the data
         foreach ($url in $urls) {
+            Write-Host "-> Querying endpoint: $url" -ForegroundColor DarkYellow
             $profiles = Invoke-MgGraphRequest -Uri $url
-
             foreach ($profile in $profiles.value) {
                 $profileName = if ($profile.displayName) { $profile.displayName } else { $profile.Name }
-                Write-Host "Processing profile: $profileName" -ForegroundColor Yellow
-
-                # Fetch the assignments for each profile
+                Write-Host "   • Processing profile: $profileName" -ForegroundColor Yellow
                 foreach ($assignment in $profile.assignments) {
-                    $odataType = $assignment.target.'@odata.type'              
-
-                    # Determine the group name based on the @odata.type
-                    if ($odataType -eq "#microsoft.graph.allDevicesAssignmentTarget") {
-                        $groupName = "All Devices"
-                    } elseif ($odataType -eq "#microsoft.graph.allLicensedUsersAssignmentTarget") {
-                        $groupName = "All Users"
-                    } else {
-                        $groupId = $assignment.target.groupId
-                        # Fetch group details for other groups
-                        try {
+                    $odataType      = $assignment.target.'@odata.type'
+                    $assignmentMode = 'Included'
+                    switch ($odataType) {
+                        "#microsoft.graph.allDevicesAssignmentTarget" {
+                            $groupName = "All Devices"; $groupId = $null
+                        }
+                        "#microsoft.graph.allLicensedUsersAssignmentTarget" {
+                            $groupName = "All Users"; $groupId = $null
+                        }
+                        "#microsoft.graph.exclusionGroupAssignmentTarget" {
+                            $assignmentMode = 'Excluded'
+                            $groupId        = $assignment.target.groupId
+                            Write-Host "      – Excluded target, fetching group $groupId" -ForegroundColor Magenta
                             $group = Invoke-MgGraphRequest -Uri "https://graph.microsoft.com/v1.0/groups/$groupId"
                             $groupName = $group.displayName
-                        } catch {
-                            Write-Host "Error fetching group details for GroupId: $groupId" -ForegroundColor Red
-                            continue
+                        }
+                        Default {
+                            $groupId  = $assignment.target.groupId
+                            Write-Host "      – Fetching group details for $groupId" -ForegroundColor Gray
+                            $group    = Invoke-MgGraphRequest -Uri "https://graph.microsoft.com/v1.0/groups/$groupId"
+                            $groupName = $group.displayName
                         }
                     }
-
-                    # Add the assignment to the results
+                    Write-Host "      -> Adding [$assignmentMode] $profileName -> $groupName" -ForegroundColor Green
                     $profileAssignments += [PSCustomObject]@{
                         Name                = $profileName
                         AssignmentTarget    = $groupId
                         AssignmentGroupName = $groupName
                         AssignmentType      = "Configuration Profile"
+                        AssignmentMode      = $assignmentMode
                     }
                 }
             }
         }
-
-        Write-Host "Finished fetching Configuration Profiles and their assigned groups." -ForegroundColor Green
+        Write-Host ">> Completed Get-AllConfigurationProfilesAndAssignedGroups (`"$($profileAssignments.Count)`" items)" -ForegroundColor Cyan
         return $profileAssignments
     } catch {
-        Write-Host "Error fetching Configuration Profiles and Assignments: $_" -ForegroundColor Red
+        Write-Host "Error fetching Configuration Profiles: $_" -ForegroundColor Red
     }
 }
 
@@ -101,432 +104,395 @@ function Get-AllConfigurationProfilesAndAssignedGroups {
 Fetches all compliance policies and their assigned groups, including handling built-in groups like "All Devices" and "All Users".
 
 .DESCRIPTION
-This function retrieves all compliance policies from Intune, including device compliance policies. It checks each policy’s assignment to determine which group it is assigned to, and handles built-in groups like "All Devices" and "All Users" by using special identifiers. The function processes multiple group assignments for each policy and returns a list of policies and their assigned groups.
+Retrieves all device compliance policies from Intune, checks each policy’s assignments (including all-devices,
+all-users, exclusions), and returns a list of policies with their assigned group names and modes.
 
 .EXAMPLE
 $complianceAssignments = Get-AllCompliancePoliciesAndAssignedGroups
-This example retrieves all compliance policies and their assigned groups, and stores the results in the `$complianceAssignments` variable.
+This example retrieves all compliance policies and their assigned groups into `$complianceAssignments`.
 
 .NOTES
-The function uses the Microsoft Graph API to fetch compliance policies and assignments. It handles both standard and built-in Intune groups.
-Ensure that you have the necessary permissions (e.g., `DeviceManagementDeviceCompliancePolicy.Read.All`, `Group.Read.All`) to run this function.
+Requires permissions: DeviceManagementDeviceCompliancePolicy.Read.All, Group.Read.All.
 #>
-
 function Get-AllCompliancePoliciesAndAssignedGroups {
+    Write-Host ">> Starting Get-AllCompliancePoliciesAndAssignedGroups" -ForegroundColor Cyan
     Write-Host "Fetching all Compliance Policies and their Assigned Groups..." -ForegroundColor Yellow
     try {
-        # Define the endpoint for Device Compliance Policies
         $url = "https://graph.microsoft.com/beta/deviceManagement/deviceCompliancePolicies?`$expand=Assignments"
-        $complianceAssignments = @()
-
-        # Fetch the compliance policies
+        Write-Host "-> Querying endpoint: $url" -ForegroundColor DarkYellow
         $policies = Invoke-MgGraphRequest -Uri $url
-
+        $complianceAssignments = @()
         foreach ($policy in $policies.value) {
             $policyName = if ($policy.displayName) { $policy.displayName } else { $policy.Name }
-            Write-Host "Processing policy: $policyName" -ForegroundColor Yellow
-
-            # Fetch the assignments for each policy
+            Write-Host "   • Processing policy: $policyName" -ForegroundColor Yellow
             foreach ($assignment in $policy.assignments) {
-                $groupId = $assignment.target.groupId
-                $odataType = $assignment.target.'@odata.type'
-
-                # Determine the group name based on the @odata.type
+                $odataType      = $assignment.target.'@odata.type'
+                $assignmentMode = 'Included'
                 if ($odataType -eq "#microsoft.graph.allDevicesAssignmentTarget") {
-                    $groupName = "All Devices"
-                } elseif ($odataType -eq "#microsoft.graph.allLicensedUsersAssignmentTarget") {
-                    $groupName = "All Users"
-                } elseif ($groupId) {
-                    # Fetch group details for other groups
-                    try {
-                        $group = Invoke-MgGraphRequest -Uri "https://graph.microsoft.com/v1.0/groups/$groupId"
-                        $groupName = $group.displayName
-                    } catch {
-                        Write-Host "Error fetching group details for GroupId: $groupId" -ForegroundColor Red
-                        continue
-                    }
-                } else {
-                    Write-Host "No valid GroupId or @odata.type for policy: $policyName" -ForegroundColor Red
-                    continue
+                    $groupName = "All Devices"; $groupId = $null
                 }
-
-                # Add the assignment to the results (one entry per group assignment)
+                elseif ($odataType -eq "#microsoft.graph.allLicensedUsersAssignmentTarget") {
+                    $groupName = "All Users"; $groupId = $null
+                }
+                elseif ($odataType -eq "#microsoft.graph.exclusionGroupAssignmentTarget") {
+                    $assignmentMode = 'Excluded'
+                    $groupId        = $assignment.target.groupId
+                    Write-Host "      – Excluded target, fetching group $groupId" -ForegroundColor Magenta
+                    $group = Invoke-MgGraphRequest -Uri "https://graph.microsoft.com/v1.0/groups/$groupId"
+                    $groupName = $group.displayName
+                }
+                else {
+                    $groupId   = $assignment.target.groupId
+                    Write-Host "      – Fetching group details for $groupId" -ForegroundColor Gray
+                    $group     = Invoke-MgGraphRequest -Uri "https://graph.microsoft.com/v1.0/groups/$groupId"
+                    $groupName = $group.displayName
+                }
+                Write-Host "      -> Adding [$assignmentMode] $policyName -> $groupName" -ForegroundColor Green
                 $complianceAssignments += [PSCustomObject]@{
                     Name                = $policyName
                     AssignmentTarget    = $groupId
                     AssignmentGroupName = $groupName
                     AssignmentType      = "Compliance Policy"
+                    AssignmentMode      = $assignmentMode
                 }
             }
         }
-
-        Write-Host "Finished fetching Compliance Policies and their assigned groups." -ForegroundColor Green
+        Write-Host ">> Completed Get-AllCompliancePoliciesAndAssignedGroups (`"$($complianceAssignments.Count)`" items)" -ForegroundColor Cyan
         return $complianceAssignments
     } catch {
-        Write-Host "Error fetching Compliance Policies and Assignments: $_" -ForegroundColor Red
+        Write-Host "Error fetching Compliance Policies: $_" -ForegroundColor Red
     }
 }
 
 <#
 .SYNOPSIS
-Fetches all applications in Intune and their assigned groups, including handling built-in groups like "All Devices" and "All Users".
+Fetches all mobile applications and their assigned groups in Intune.
 
 .DESCRIPTION
-This function retrieves all mobile applications from Intune and their assigned groups. It checks each application’s assignment to determine which group it is assigned to and handles built-in groups like "All Devices" and "All Users" by using special identifiers. The function processes multiple group assignments for each application and returns a list of applications and their assigned groups.
+Retrieves every mobile app configured in Intune, examines each assignment target (including all-devices, all-users,
+and exclusions), and returns a list of apps with assigned group names and modes.
 
 .EXAMPLE
-$applicationAssignments = Get-AllApplicationsAndAssignedGroups
-This example retrieves all applications and their assigned groups, and stores the results in the `$applicationAssignments` variable.
+$appAssignments = Get-AllApplicationsAndAssignedGroups
+Stores all app-to-group assignments in `$appAssignments`.
 
 .NOTES
-The function uses the Microsoft Graph API to fetch mobile applications and assignments. It handles both standard and built-in Intune groups.
-Ensure that you have the necessary permissions (e.g., `DeviceManagementApps.Read.All`, `Group.Read.All`) to run this function.
+Requires permissions: DeviceManagementApps.Read.All, Group.Read.All.
 #>
-
 function Get-AllApplicationsAndAssignedGroups {
+    Write-Host ">> Starting Get-AllApplicationsAndAssignedGroups" -ForegroundColor Cyan
     Write-Host "Fetching all Applications and their Assigned Groups..." -ForegroundColor Yellow
     try {
-        # Define the endpoint for Mobile Applications
         $url = "https://graph.microsoft.com/beta/deviceAppManagement/mobileApps?`$expand=Assignments"
-        $appAssignments = @()
-
-        # Fetch the mobile apps
+        Write-Host "-> Querying endpoint: $url" -ForegroundColor DarkYellow
         $apps = Invoke-MgGraphRequest -Uri $url
-
+        $appAssignments = @()
         foreach ($app in $apps.value) {
             $appName = if ($app.displayName) { $app.displayName } else { $app.Name }
-            Write-Host "Processing app: $appName" -ForegroundColor Yellow
-
-            # Fetch the assignments for each app
+            Write-Host "   • Processing app: $appName" -ForegroundColor Yellow
             foreach ($assignment in $app.assignments) {
-                $groupId = $assignment.target.groupId
-                $odataType = $assignment.target.'@odata.type'
-
-                # Determine the group name based on the @odata.type
+                $odataType      = $assignment.target.'@odata.type'
+                $assignmentMode = 'Included'
                 if ($odataType -eq "#microsoft.graph.allDevicesAssignmentTarget") {
-                    $groupName = "All Devices"
-                } elseif ($odataType -eq "#microsoft.graph.allLicensedUsersAssignmentTarget") {
-                    $groupName = "All Users"
-                } elseif ($groupId) {
-                    # Fetch group details for other groups
-                    try {
-                        $group = Invoke-MgGraphRequest -Uri "https://graph.microsoft.com/v1.0/groups/$groupId"
-                        $groupName = $group.displayName
-                    } catch {
-                        Write-Host "Error fetching group details for GroupId: $groupId" -ForegroundColor Red
-                        continue
-                    }
-                } else {
-                    Write-Host "No valid GroupId or @odata.type for app: $appName" -ForegroundColor Red
-                    continue
+                    $groupName = "All Devices"; $groupId = $null
                 }
-
-                # Add the assignment to the results (one entry per group assignment)
+                elseif ($odataType -eq "#microsoft.graph.allLicensedUsersAssignmentTarget") {
+                    $groupName = "All Users"; $groupId = $null
+                }
+                elseif ($odataType -eq "#microsoft.graph.exclusionGroupAssignmentTarget") {
+                    $assignmentMode = 'Excluded'
+                    $groupId        = $assignment.target.groupId
+                    Write-Host "      – Excluded target, fetching group $groupId" -ForegroundColor Magenta
+                    $group = Invoke-MgGraphRequest -Uri "https://graph.microsoft.com/v1.0/groups/$groupId"
+                    $groupName = $group.displayName
+                }
+                else {
+                    $groupId   = $assignment.target.groupId
+                    Write-Host "      – Fetching group details for $groupId" -ForegroundColor Gray
+                    $group     = Invoke-MgGraphRequest -Uri "https://graph.microsoft.com/v1.0/groups/$groupId"
+                    $groupName = $group.displayName
+                }
+                Write-Host "      -> Adding [$assignmentMode] $appName -> $groupName" -ForegroundColor Green
                 $appAssignments += [PSCustomObject]@{
                     Name                = $appName
                     AssignmentTarget    = $groupId
                     AssignmentGroupName = $groupName
                     AssignmentType      = "Application"
+                    AssignmentMode      = $assignmentMode
                 }
             }
         }
-
-        Write-Host "Finished fetching Applications and their assigned groups." -ForegroundColor Green
+        Write-Host ">> Completed Get-AllApplicationsAndAssignedGroups (`"$($appAssignments.Count)`" items)" -ForegroundColor Cyan
         return $appAssignments
     } catch {
-        Write-Host "Error fetching Applications and Assignments: $_" -ForegroundColor Red
+        Write-Host "Error fetching Applications: $_" -ForegroundColor Red
     }
 }
 
 <#
 .SYNOPSIS
-Fetches all remediation scripts and their assigned groups, including handling built-in groups like "All Devices" and "All Users".
+Fetches all remediation (device health) scripts and their assigned groups.
 
 .DESCRIPTION
-This function retrieves all remediation scripts (device health scripts) from Intune and their assigned groups. It checks each script's assignment to determine which group it is assigned to, and handles built-in groups like "All Devices" and "All Users" by using special identifiers. The function processes multiple group assignments for each script and returns a list of scripts and their assigned groups.
+Retrieves every remediation (device health) script configured in Intune, examines each assignment
+(including all-devices, all-users, exclusions), and returns a list of scripts with assigned group names and modes.
 
 .EXAMPLE
 $remediationAssignments = Get-AllRemediationScriptsAndAssignedGroups
-This example retrieves all remediation scripts and their assigned groups, and stores the results in the `$remediationAssignments` variable.
+Stores all remediation script assignments in `$remediationAssignments`.
 
 .NOTES
-The function uses the Microsoft Graph API to fetch remediation scripts and assignments. It handles both standard and built-in Intune groups.
-Ensure that you have the necessary permissions (e.g., `DeviceManagementDeviceHealthScript.Read.All`, `Group.Read.All`) to run this function.
+Requires permissions: DeviceManagementDeviceHealthScript.Read.All, Group.Read.All.
 #>
-
 function Get-AllRemediationScriptsAndAssignedGroups {
+    Write-Host ">> Starting Get-AllRemediationScriptsAndAssignedGroups" -ForegroundColor Cyan
     Write-Host "Fetching all Remediation Scripts and their Assigned Groups..." -ForegroundColor Yellow
     try {
-        # Define the endpoint for Device Health Scripts (Remediation Scripts)
         $url = "https://graph.microsoft.com/beta/deviceManagement/deviceHealthScripts?`$expand=Assignments"
-        $remediationAssignments = @()
-
-        # Fetch the remediation scripts
+        Write-Host "-> Querying endpoint: $url" -ForegroundColor DarkYellow
         $scripts = Invoke-MgGraphRequest -Uri $url
-
+        $remediationAssignments = @()
         foreach ($script in $scripts.value) {
             $scriptName = if ($script.displayName) { $script.displayName } else { $script.Name }
-            Write-Host "Processing script: $scriptName" -ForegroundColor Yellow
-
-            # Fetch the assignments for each script
+            Write-Host "   • Processing script: $scriptName" -ForegroundColor Yellow
             foreach ($assignment in $script.assignments) {
-                $groupId = $assignment.target.groupId
-                $odataType = $assignment.target.'@odata.type'
-
-                # Determine the group name based on the @odata.type
+                $odataType      = $assignment.target.'@odata.type'
+                $assignmentMode = 'Included'
                 if ($odataType -eq "#microsoft.graph.allDevicesAssignmentTarget") {
-                    $groupName = "All Devices"
-                } elseif ($odataType -eq "#microsoft.graph.allLicensedUsersAssignmentTarget") {
-                    $groupName = "All Users"
-                } elseif ($groupId) {
-                    # Fetch group details for other groups
-                    try {
-                        $group = Invoke-MgGraphRequest -Uri "https://graph.microsoft.com/v1.0/groups/$groupId"
-                        $groupName = $group.displayName
-                    } catch {
-                        Write-Host "Error fetching group details for GroupId: $groupId" -ForegroundColor Red
-                        continue
-                    }
-                } else {
-                    Write-Host "No valid GroupId or @odata.type for script: $scriptName" -ForegroundColor Red
-                    continue
+                    $groupName = "All Devices"; $groupId = $null
                 }
-
-                # Add the assignment to the results (one entry per group assignment)
+                elseif ($odataType -eq "#microsoft.graph.allLicensedUsersAssignmentTarget") {
+                    $groupName = "All Users"; $groupId = $null
+                }
+                elseif ($odataType -eq "#microsoft.graph.exclusionGroupAssignmentTarget") {
+                    $assignmentMode = 'Excluded'
+                    $groupId        = $assignment.target.groupId
+                    Write-Host "      – Excluded target, fetching group $groupId" -ForegroundColor Magenta
+                    $group = Invoke-MgGraphRequest -Uri "https://graph.microsoft.com/v1.0/groups/$groupId"
+                    $groupName = $group.displayName
+                }
+                else {
+                    $groupId   = $assignment.target.groupId
+                    Write-Host "      – Fetching group details for $groupId" -ForegroundColor Gray
+                    $group     = Invoke-MgGraphRequest -Uri "https://graph.microsoft.com/v1.0/groups/$groupId"
+                    $groupName = $group.displayName
+                }
+                Write-Host "      -> Adding [$assignmentMode] $scriptName -> $groupName" -ForegroundColor Green
                 $remediationAssignments += [PSCustomObject]@{
                     Name                = $scriptName
                     AssignmentTarget    = $groupId
                     AssignmentGroupName = $groupName
                     AssignmentType      = "Remediation Script"
+                    AssignmentMode      = $assignmentMode
                 }
             }
         }
-
-        Write-Host "Finished fetching Remediation Scripts and their assigned groups." -ForegroundColor Green
+        Write-Host ">> Completed Get-AllRemediationScriptsAndAssignedGroups (`"$($remediationAssignments.Count)`" items)" -ForegroundColor Cyan
         return $remediationAssignments
     } catch {
-        Write-Host "Error fetching Remediation Scripts and Assignments: $_" -ForegroundColor Red
+        Write-Host "Error fetching Remediation Scripts: $_" -ForegroundColor Red
     }
 }
 
 <#
 .SYNOPSIS
-Fetches all platform scripts (device management scripts) and their assigned groups, including handling built-in groups like "All Devices" and "All Users".
+Fetches all device management (platform) scripts and their assigned groups.
 
 .DESCRIPTION
-This function retrieves all platform scripts (device management scripts) from Intune and their assigned groups. It checks each script's assignment to determine which group it is assigned to, and handles built-in groups like "All Devices" and "All Users" by using special identifiers. The function processes multiple group assignments for each platform script and returns a list of scripts and their assigned groups.
+Retrieves every device management script configured in Intune, checks assignments (all-devices,
+all-users, exclusions), and returns a list of scripts with assigned group names and modes.
 
 .EXAMPLE
 $platformAssignments = Get-AllPlatformScriptsAndAssignedGroups
-This example retrieves all platform scripts and their assigned groups, and stores the results in the `$platformAssignments` variable.
+Stores all platform script assignments in `$platformAssignments`.
 
 .NOTES
-The function uses the Microsoft Graph API to fetch platform scripts and assignments. It handles both standard and built-in Intune groups.
-Ensure that you have the necessary permissions (e.g., `DeviceManagementDeviceManagementScript.Read.All`, `Group.Read.All`) to run this function.
+Requires permissions: DeviceManagementDeviceManagementScript.Read.All, Group.Read.All.
 #>
-
 function Get-AllPlatformScriptsAndAssignedGroups {
+    Write-Host ">> Starting Get-AllPlatformScriptsAndAssignedGroups" -ForegroundColor Cyan
     Write-Host "Fetching all Platform Scripts and their Assigned Groups..." -ForegroundColor Yellow
     try {
-        # Define the endpoint for Device Management Scripts (Platform Scripts)
-        $url = "https://graph.microsoft.com/beta/deviceManagement/deviceManagementScripts?`$expand=Assignments"
-        $platformAssignments = @()
-
-        # Fetch the platform scripts
+        $url = "https://graph.microsoft.com/beta/deviceManagement/deviceManagementScripts?`$expand=assignments"
+        Write-Host "-> Querying endpoint: $url" -ForegroundColor DarkYellow
         $scripts = Invoke-MgGraphRequest -Uri $url
-
+        $platformAssignments = @()
         foreach ($script in $scripts.value) {
             $scriptName = if ($script.displayName) { $script.displayName } else { $script.Name }
-            Write-Host "Processing script: $scriptName" -ForegroundColor Yellow
-
-            # Fetch the assignments for each script
+            Write-Host "   • Processing script: $scriptName" -ForegroundColor Yellow
             foreach ($assignment in $script.assignments) {
-                $groupId = $assignment.target.groupId
-                $odataType = $assignment.target.'@odata.type'
-
-                # Determine the group name based on the @odata.type
+                $odataType      = $assignment.target.'@odata.type'
+                $assignmentMode = 'Included'
                 if ($odataType -eq "#microsoft.graph.allDevicesAssignmentTarget") {
-                    $groupName = "All Devices"
-                } elseif ($odataType -eq "#microsoft.graph.allLicensedUsersAssignmentTarget") {
-                    $groupName = "All Users"
-                } elseif ($groupId) {
-                    # Fetch group details for other groups
-                    try {
-                        $group = Invoke-MgGraphRequest -Uri "https://graph.microsoft.com/v1.0/groups/$groupId"
-                        $groupName = $group.displayName
-                    } catch {
-                        Write-Host "Error fetching group details for GroupId: $groupId" -ForegroundColor Red
-                        continue
-                    }
-                } else {
-                    Write-Host "No valid GroupId or @odata.type for script: $scriptName" -ForegroundColor Red
-                    continue
+                    $groupName = "All Devices"; $groupId = $null
                 }
-
-                # Add the assignment to the results (one entry per group assignment)
+                elseif ($odataType -eq "#microsoft.graph.allLicensedUsersAssignmentTarget") {
+                    $groupName = "All Users"; $groupId = $null
+                }
+                elseif ($odataType -eq "#microsoft.graph.exclusionGroupAssignmentTarget") {
+                    $assignmentMode = 'Excluded'
+                    $groupId        = $assignment.target.groupId
+                    Write-Host "      – Excluded target, fetching group $groupId" -ForegroundColor Magenta
+                    $group = Invoke-MgGraphRequest -Uri "https://graph.microsoft.com/v1.0/groups/$groupId"
+                    $groupName = $group.displayName
+                }
+                else {
+                    $groupId   = $assignment.target.groupId
+                    Write-Host "      – Fetching group details for $groupId" -ForegroundColor Gray
+                    $group     = Invoke-MgGraphRequest -Uri "https://graph.microsoft.com/v1.0/groups/$groupId"
+                    $groupName = $group.displayName
+                }
+                Write-Host "      -> Adding [$assignmentMode] $scriptName -> $groupName" -ForegroundColor Green
                 $platformAssignments += [PSCustomObject]@{
                     Name                = $scriptName
                     AssignmentTarget    = $groupId
                     AssignmentGroupName = $groupName
                     AssignmentType      = "Platform Script"
+                    AssignmentMode      = $assignmentMode
                 }
             }
         }
-
-        Write-Host "Finished fetching Platform Scripts and their assigned groups." -ForegroundColor Green
+        Write-Host ">> Completed Get-AllPlatformScriptsAndAssignedGroups (`"$($platformAssignments.Count)`" items)" -ForegroundColor Cyan
         return $platformAssignments
     } catch {
-        Write-Host "Error fetching Platform Scripts and Assignments: $_" -ForegroundColor Red
+        Write-Host "Error fetching Platform Scripts: $_" -ForegroundColor Red
     }
 }
 
 <#
 .SYNOPSIS
-Fetches all macOS Shell Scripts and their assigned groups, including handling built-in groups like "All Devices" and "All Users".
+Fetches all macOS shell scripts and their assigned groups.
 
 .DESCRIPTION
-This function retrieves all macOS shell scripts from Intune and their assigned groups. It checks each script's assignment to determine which group it is assigned to, and handles built-in groups like "All Devices" and "All Users" by using special identifiers. The function processes multiple group assignments for each script and returns a list of scripts and their assigned groups.
+Retrieves every macOS shell script configured in Intune, checks assignments (all-devices,
+all-users, exclusions), and returns a list of scripts with assigned group names and modes.
 
 .EXAMPLE
 $macosShellAssignments = Get-AllMacOSShellScriptsAndAssignedGroups
-This example retrieves all macOS Shell Scripts and their assigned groups, and stores the results in the `$macosShellAssignments` variable.
+Stores all macOS shell script assignments in `$macosShellAssignments`.
 
 .NOTES
-The function uses the Microsoft Graph API to fetch macOS Shell Scripts and assignments. It handles both standard and built-in Intune groups.
-Ensure that you have the necessary permissions (e.g., `DeviceManagementDeviceShellScript.Read.All`, `Group.Read.All`) to run this function.
+Requires permissions: DeviceManagementDeviceShellScript.Read.All, Group.Read.All.
 #>
-
 function Get-AllMacOSShellScriptsAndAssignedGroups {
+    Write-Host ">> Starting Get-AllMacOSShellScriptsAndAssignedGroups" -ForegroundColor Cyan
     Write-Host "Fetching all macOS Shell Scripts and their Assigned Groups..." -ForegroundColor Yellow
     try {
-        # Define the endpoint for macOS Shell Scripts
         $url = "https://graph.microsoft.com/beta/deviceManagement/deviceShellScripts?`$expand=assignments"
-        $macosShellAssignments = @()
-
-        # Fetch the macOS shell scripts
+        Write-Host "-> Querying endpoint: $url" -ForegroundColor DarkYellow
         $scripts = Invoke-MgGraphRequest -Uri $url
-
+        $macosShellAssignments = @()
         foreach ($script in $scripts.value) {
             $scriptName = if ($script.displayName) { $script.displayName } else { $script.Name }
-            Write-Host "Processing script: $scriptName" -ForegroundColor Yellow
-
-            # Fetch the assignments for each script
+            Write-Host "   • Processing script: $scriptName" -ForegroundColor Yellow
             foreach ($assignment in $script.assignments) {
-                $groupId = $assignment.target.groupId
-                $odataType = $assignment.target.'@odata.type'
-
-                # Determine the group name based on the @odata.type
+                $odataType      = $assignment.target.'@odata.type'
+                $assignmentMode = 'Included'
                 if ($odataType -eq "#microsoft.graph.allDevicesAssignmentTarget") {
-                    $groupName = "All Devices"
-                } elseif ($odataType -eq "#microsoft.graph.allLicensedUsersAssignmentTarget") {
-                    $groupName = "All Users"
-                } elseif ($groupId) {
-                    # Fetch group details for other groups
-                    try {
-                        $group = Invoke-MgGraphRequest -Uri "https://graph.microsoft.com/v1.0/groups/$groupId"
-                        $groupName = $group.displayName
-                    } catch {
-                        Write-Host "Error fetching group details for GroupId: $groupId" -ForegroundColor Red
-                        continue
-                    }
-                } else {
-                    Write-Host "No valid GroupId or @odata.type for script: $scriptName" -ForegroundColor Red
-                    continue
+                    $groupName = "All Devices"; $groupId = $null
                 }
-
-                # Add the assignment to the results (one entry per group assignment)
+                elseif ($odataType -eq "#microsoft.graph.allLicensedUsersAssignmentTarget") {
+                    $groupName = "All Users"; $groupId = $null
+                }
+                elseif ($odataType -eq "#microsoft.graph.exclusionGroupAssignmentTarget") {
+                    $assignmentMode = 'Excluded'
+                    $groupId        = $assignment.target.groupId
+                    Write-Host "      – Excluded target, fetching group $groupId" -ForegroundColor Magenta
+                    $group = Invoke-MgGraphRequest -Uri "https://graph.microsoft.com/v1.0/groups/$groupId"
+                    $groupName = $group.displayName
+                }
+                else {
+                    $groupId   = $assignment.target.groupId
+                    Write-Host "      – Fetching group details for $groupId" -ForegroundColor Gray
+                    $group     = Invoke-MgGraphRequest -Uri "https://graph.microsoft.com/v1.0/groups/$groupId"
+                    $groupName = $group.displayName
+                }
+                Write-Host "      -> Adding [$assignmentMode] $scriptName -> $groupName" -ForegroundColor Green
                 $macosShellAssignments += [PSCustomObject]@{
                     Name                = $scriptName
                     AssignmentTarget    = $groupId
                     AssignmentGroupName = $groupName
                     AssignmentType      = "macOS Shell Script"
+                    AssignmentMode      = $assignmentMode
                 }
             }
         }
-
-        Write-Host "Finished fetching macOS Shell Scripts and their assigned groups." -ForegroundColor Green
+        Write-Host ">> Completed Get-AllMacOSShellScriptsAndAssignedGroups (`"$($macosShellAssignments.Count)`" items)" -ForegroundColor Cyan
         return $macosShellAssignments
     } catch {
-        Write-Host "Error fetching macOS Shell Scripts and Assignments: $_" -ForegroundColor Red
+        Write-Host "Error fetching macOS Shell Scripts: $_" -ForegroundColor Red
     }
 }
 
 <#
 .SYNOPSIS
-Fetches all App Protection Policies and their assigned groups, including handling built-in groups like "All Devices" and "All Users".
+Fetches all App Protection Policies and their assigned groups, including multiple platforms.
 
 .DESCRIPTION
-This function retrieves all app protection policies (iOS, Android, Windows, and MDM Windows Information Protection) from Intune and their assigned groups. It checks each policy's assignment to determine which group it is assigned to, and handles built-in groups like "All Devices" and "All Users" by using special identifiers. The function processes multiple group assignments for each policy and returns a list of policies and their assigned groups.
+Retrieves App Protection policies (iOS, Android, Windows, WIP) from Intune, examines each assignment
+(all-devices, all-users, exclusions), and returns a consolidated list of policies with group names and modes.
 
 .EXAMPLE
 $appProtectionAssignments = Get-AllAppProtectionPoliciesAndAssignedGroups
-This example retrieves all App Protection Policies and their assigned groups, and stores the results in the `$appProtectionAssignments` variable.
+Stores all app protection policy assignments in `$appProtectionAssignments`.
 
 .NOTES
-The function uses the Microsoft Graph API to fetch app protection policies and assignments. It handles both standard and built-in Intune groups.
-Ensure that you have the necessary permissions (e.g., `DeviceAppManagement.Read.All`, `Group.Read.All`) to run this function.
+Requires permissions: DeviceAppManagement.Read.All, DeviceAppManagement.ReadWrite.All, Group.Read.All.
 #>
-
 function Get-AllAppProtectionPoliciesAndAssignedGroups {
+    Write-Host ">> Starting Get-AllAppProtectionPoliciesAndAssignedGroups" -ForegroundColor Cyan
     Write-Host "Fetching all App Protection Policies and their Assigned Groups..." -ForegroundColor Yellow
     try {
-        # Define the endpoints for App Protection Policies
         $urls = @(
-            "https://graph.microsoft.com/beta/deviceAppManagement/iosManagedAppProtections?`$expand=Assignments",
-            "https://graph.microsoft.com/beta/deviceAppManagement/androidManagedAppProtections?`$expand=Assignments",
-            "https://graph.microsoft.com/beta/deviceAppManagement/windowsManagedAppProtections?`$expand=Assignments",
-            "https://graph.microsoft.com/beta/deviceAppManagement/mdmWindowsInformationProtectionPolicies?`$expand=Assignments"
+            "https://graph.microsoft.com/beta/deviceAppManagement/iosManagedAppProtections?`$expand=assignments",
+            "https://graph.microsoft.com/beta/deviceAppManagement/androidManagedAppProtections?`$expand=assignments",
+            "https://graph.microsoft.com/beta/deviceAppManagement/windowsManagedAppProtections?`$expand=assignments",
+            "https://graph.microsoft.com/beta/deviceAppManagement/mdmWindowsInformationProtectionPolicies?`$expand=assignments"
         )
-
         $appProtectionAssignments = @()
-
-        # Loop through each endpoint and fetch the data
         foreach ($url in $urls) {
+            Write-Host "-> Querying endpoint: $url" -ForegroundColor DarkYellow
             $appProtections = Invoke-MgGraphRequest -Uri $url
-
             foreach ($appProtection in $appProtections.value) {
                 $appProtectionName = if ($appProtection.displayName) { $appProtection.displayName } else { $appProtection.Name }
-                Write-Host "Processing App Protection Policy: $appProtectionName" -ForegroundColor Yellow
-
-                # Fetch the assignments for each policy
+                Write-Host "   • Processing App Protection Policy: $appProtectionName" -ForegroundColor Yellow
                 foreach ($assignment in $appProtection.assignments) {
-                    $groupId = $assignment.target.groupId
-                    $odataType = $assignment.target.'@odata.type'
-
-                    # Determine the group name based on the @odata.type
+                    $odataType      = $assignment.target.'@odata.type'
+                    $assignmentMode = 'Included'
                     if ($odataType -eq "#microsoft.graph.allDevicesAssignmentTarget") {
-                        $groupName = "All Devices"
-                    } elseif ($odataType -eq "#microsoft.graph.allLicensedUsersAssignmentTarget") {
-                        $groupName = "All Users"
-                    } elseif ($groupId) {
-                        # Fetch group details for other groups
-                        try {
-                            $group = Invoke-MgGraphRequest -Uri "https://graph.microsoft.com/v1.0/groups/$groupId"
-                            $groupName = $group.displayName
-                        } catch {
-                            Write-Host "Error fetching group details for GroupId: $groupId" -ForegroundColor Red
-                            continue
-                        }
-                    } else {
-                        Write-Host "No valid GroupId or @odata.type for app protection policy: $appProtectionName" -ForegroundColor Red
-                        continue
+                        $groupName = "All Devices"; $groupId = $null
                     }
-
-                    # Add the assignment to the results (one entry per group assignment)
+                    elseif ($odataType -eq "#microsoft.graph.allLicensedUsersAssignmentTarget") {
+                        $groupName = "All Users"; $groupId = $null
+                    }
+                    elseif ($odataType -eq "#microsoft.graph.exclusionGroupAssignmentTarget") {
+                        $assignmentMode = 'Excluded'
+                        $groupId        = $assignment.target.groupId
+                        Write-Host "      – Excluded target, fetching group $groupId" -ForegroundColor Magenta
+                        $group = Invoke-MgGraphRequest -Uri "https://graph.microsoft.com/v1.0/groups/$groupId"
+                        $groupName = $group.displayName
+                    }
+                    else {
+                        $groupId   = $assignment.target.groupId
+                        Write-Host "      – Fetching group details for $groupId" -ForegroundColor Gray
+                        $group     = Invoke-MgGraphRequest -Uri "https://graph.microsoft.com/v1.0/groups/$groupId"
+                        $groupName = $group.displayName
+                    }
+                    Write-Host "      -> Adding [$assignmentMode] $appProtectionName -> $groupName" -ForegroundColor Green
                     $appProtectionAssignments += [PSCustomObject]@{
                         Name                = $appProtectionName
                         AssignmentTarget    = $groupId
                         AssignmentGroupName = $groupName
                         AssignmentType      = "App Protection Policy"
+                        AssignmentMode      = $assignmentMode
                     }
                 }
             }
         }
-
-        Write-Host "Finished fetching App Protection Policies and their assigned groups." -ForegroundColor Green
+        Write-Host ">> Completed Get-AllAppProtectionPoliciesAndAssignedGroups (`"$($appProtectionAssignments.Count)`" items)" -ForegroundColor Cyan
         return $appProtectionAssignments
     } catch {
-        Write-Host "Error fetching App Protection Policies and Assignments: $_" -ForegroundColor Red
+        Write-Host "Error fetching App Protection Policies: $_" -ForegroundColor Red
     }
 }
 
@@ -556,7 +522,6 @@ Write-Host "8: Fetch *All* Assignments and Export to Single CSV"
 Write-Host "0: Exit"
 Write-Host ""
 
-# Loop to keep prompting for input
 do {
     $userChoice = Read-Host "Choose the number of the operation you want to run"
 
@@ -565,48 +530,46 @@ do {
             Write-Host "You selected: Fetch Configuration Profiles and Their Assigned Groups" -ForegroundColor Green
             $result = Get-AllConfigurationProfilesAndAssignedGroups
             $result | Out-Host
-            $result | Export-Csv C:\Temp\AllConfigurationProfilesAndAssignedGroups.csv -Encoding UTF8 -NoTypeInformation
+            $result | Export-Csv "$assignTronPath\AllConfigurationProfilesAndAssignedGroups.csv" -Encoding UTF8 -NoTypeInformation
         }
         2 {
             Write-Host "You selected: Fetch Compliance Policies and Their Assigned Groups" -ForegroundColor Green
             $result = Get-AllCompliancePoliciesAndAssignedGroups
             $result | Out-Host
-            $result | Export-Csv AllCompliancePoliciesAndAssignedGroups.csv -Encoding UTF8 -NoTypeInformation
+            $result | Export-Csv "$assignTronPath\AllCompliancePoliciesAndAssignedGroups.csv" -Encoding UTF8 -NoTypeInformation
         }
         3 {
             Write-Host "You selected: Fetch Applications and Their Assigned Groups" -ForegroundColor Green
             $result = Get-AllApplicationsAndAssignedGroups
             $result | Out-Host
-            $result | Export-Csv AllApplicationsAndAssignedGroups.csv -Encoding UTF8 -NoTypeInformation
+            $result | Export-Csv "$assignTronPath\AllApplicationsAndAssignedGroups.csv" -Encoding UTF8 -NoTypeInformation
         }
         4 {
             Write-Host "You selected: Fetch Remediation Scripts and Their Assigned Groups" -ForegroundColor Green
             $result = Get-AllRemediationScriptsAndAssignedGroups
             $result | Out-Host
-            $result | Export-Csv AllRemediationScriptsAndAssignedGroups.csv -Encoding UTF8 -NoTypeInformation
+            $result | Export-Csv "$assignTronPath\AllRemediationScriptsAndAssignedGroups.csv" -Encoding UTF8 -NoTypeInformation
         }
         5 {
             Write-Host "You selected: Fetch Platform Scripts and Their Assigned Groups" -ForegroundColor Green
             $result = Get-AllPlatformScriptsAndAssignedGroups
             $result | Out-Host
-            $result | Export-Csv AllPlatformScriptsAndAssignedGroups.csv -Encoding UTF8 -NoTypeInformation
+            $result | Export-Csv "$assignTronPath\AllPlatformScriptsAndAssignedGroups.csv" -Encoding UTF8 -NoTypeInformation
         }
         6 {
             Write-Host "You selected: Fetch macOS Shell Scripts and Their Assigned Groups" -ForegroundColor Green
             $result = Get-AllMacOSShellScriptsAndAssignedGroups
             $result | Out-Host
-            $result | Export-Csv AllMacOSShellScriptsAndAssignedGroups.csv -Encoding UTF8 -NoTypeInformation
+            $result | Export-Csv "$assignTronPath\AllMacOSShellScriptsAndAssignedGroups.csv" -Encoding UTF8 -NoTypeInformation
         }
         7 {
             Write-Host "You selected: Fetch App Protection Policies and Their Assigned Groups" -ForegroundColor Green
             $result = Get-AllAppProtectionPoliciesAndAssignedGroups
             $result | Out-Host
-            $result | Export-Csv AllAppProtectionPoliciesAndAssignedGroups.csv -Encoding UTF8 -NoTypeInformation
+            $result | Export-Csv "$assignTronPath\AllAppProtectionPoliciesAndAssignedGroups.csv" -Encoding UTF8 -NoTypeInformation
         }
         8 {
             Write-Host "You selected: Fetch *All* Assignments and Export to Single CSV" -ForegroundColor Green
-
-            # 1. Gather all assignments
             $allAssignments = @()
             $allAssignments += Get-AllConfigurationProfilesAndAssignedGroups
             $allAssignments += Get-AllCompliancePoliciesAndAssignedGroups
@@ -615,27 +578,22 @@ do {
             $allAssignments += Get-AllPlatformScriptsAndAssignedGroups
             $allAssignments += Get-AllMacOSShellScriptsAndAssignedGroups
             $allAssignments += Get-AllAppProtectionPoliciesAndAssignedGroups
-
-            # 2. Output to console
             $allAssignments | Out-Host
-
-            # 3. Export to CSV
-            $csvPath = "C:\Temp\AllIntuneAssignments.csv"
+            $csvPath = "$assignTronPath\AllIntuneAssignments.csv"
             $allAssignments | Export-Csv $csvPath -Encoding UTF8 -NoTypeInformation
-
             Write-Host "All assignments exported to $csvPath" -ForegroundColor Cyan
         }
         0 {
             Write-Host "Exiting the tool. Goodbye!" -ForegroundColor Cyan
         }
-        default {
+        Default {
             Write-Host "Invalid selection. Please choose a number from 0 to 8." -ForegroundColor Red
         }
     }
 
-    if ($userChoice -ne 9) {
+    if ($userChoice -ne 0) {
         $continueChoice = Read-Host "Do you want to perform another operation? (Y/N)"
-        if ($continueChoice -ne 'Y' -and $continueChoice -ne 'y') {
+        if ($continueChoice -notin 'Y','y') {
             Write-Host "Exiting the tool. Goodbye!" -ForegroundColor Cyan
             break
         }
@@ -652,4 +610,4 @@ do {
         Write-Host "8: Fetch *All* Assignments and Export to Single CSV"
         Write-Host "0: Exit"
     }
-} while ($userChoice -ne 0)
+} while ($true)
