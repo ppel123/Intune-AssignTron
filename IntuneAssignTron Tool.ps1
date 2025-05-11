@@ -629,7 +629,7 @@ do {
             Write-Host "Exiting the tool. Goodbye!" -ForegroundColor Cyan
         }
         default {
-            Write-Host "Invalid selection. Please choose a number from 0 to 7." -ForegroundColor Red
+            Write-Host "Invalid selection. Please choose a number from 0 to 8." -ForegroundColor Red
         }
     }
 
