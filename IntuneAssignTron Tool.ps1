@@ -80,10 +80,10 @@ function Get-AllConfigurationProfilesAndAssignedGroups {
 
                     # Add the assignment to the results
                     $profileAssignments += [PSCustomObject]@{
-                        ProfileName        = $profileName
-                        AssignmentTarget   = $groupId
+                        Name                = $profileName
+                        AssignmentTarget    = $groupId
                         AssignmentGroupName = $groupName
-                        AssignmentType     = "Configuration Profile"
+                        AssignmentType      = "Configuration Profile"
                     }
                 }
             }
@@ -152,10 +152,10 @@ function Get-AllCompliancePoliciesAndAssignedGroups {
 
                 # Add the assignment to the results (one entry per group assignment)
                 $complianceAssignments += [PSCustomObject]@{
-                    PolicyName        = $policyName
-                    AssignmentTarget   = $groupId
+                    Name                = $policyName
+                    AssignmentTarget    = $groupId
                     AssignmentGroupName = $groupName
-                    AssignmentType     = "Compliance Policy"
+                    AssignmentType      = "Compliance Policy"
                 }
             }
         }
@@ -223,10 +223,10 @@ function Get-AllApplicationsAndAssignedGroups {
 
                 # Add the assignment to the results (one entry per group assignment)
                 $appAssignments += [PSCustomObject]@{
-                    AppName            = $appName
-                    AssignmentTarget   = $groupId
+                    Name                = $appName
+                    AssignmentTarget    = $groupId
                     AssignmentGroupName = $groupName
-                    AssignmentType     = "Application"
+                    AssignmentType      = "Application"
                 }
             }
         }
@@ -294,10 +294,10 @@ function Get-AllRemediationScriptsAndAssignedGroups {
 
                 # Add the assignment to the results (one entry per group assignment)
                 $remediationAssignments += [PSCustomObject]@{
-                    ScriptName         = $scriptName
-                    AssignmentTarget   = $groupId
+                    Name                = $scriptName
+                    AssignmentTarget    = $groupId
                     AssignmentGroupName = $groupName
-                    AssignmentType     = "Remediation Script"
+                    AssignmentType      = "Remediation Script"
                 }
             }
         }
@@ -365,10 +365,10 @@ function Get-AllPlatformScriptsAndAssignedGroups {
 
                 # Add the assignment to the results (one entry per group assignment)
                 $platformAssignments += [PSCustomObject]@{
-                    ScriptName         = $scriptName
-                    AssignmentTarget   = $groupId
+                    Name                = $scriptName
+                    AssignmentTarget    = $groupId
                     AssignmentGroupName = $groupName
-                    AssignmentType     = "Platform Script"
+                    AssignmentType      = "Platform Script"
                 }
             }
         }
@@ -436,10 +436,10 @@ function Get-AllMacOSShellScriptsAndAssignedGroups {
 
                 # Add the assignment to the results (one entry per group assignment)
                 $macosShellAssignments += [PSCustomObject]@{
-                    ScriptName         = $scriptName
-                    AssignmentTarget   = $groupId
+                    Name                = $scriptName
+                    AssignmentTarget    = $groupId
                     AssignmentGroupName = $groupName
-                    AssignmentType     = "macOS Shell Script"
+                    AssignmentType      = "macOS Shell Script"
                 }
             }
         }
@@ -514,10 +514,10 @@ function Get-AllAppProtectionPoliciesAndAssignedGroups {
 
                     # Add the assignment to the results (one entry per group assignment)
                     $appProtectionAssignments += [PSCustomObject]@{
-                        PolicyName         = $appProtectionName
-                        AssignmentTarget   = $groupId
+                        Name                = $appProtectionName
+                        AssignmentTarget    = $groupId
                         AssignmentGroupName = $groupName
-                        AssignmentType     = "App Protection Policy"
+                        AssignmentType      = "App Protection Policy"
                     }
                 }
             }
@@ -552,6 +552,7 @@ Write-Host "4: Fetch Remediation Scripts and Their Assigned Groups"
 Write-Host "5: Fetch Platform Scripts and Their Assigned Groups"
 Write-Host "6: Fetch macOS Shell Scripts and Their Assigned Groups"
 Write-Host "7: Fetch App Protection Policies and Their Assigned Groups"
+Write-Host "8: Fetch *All* Assignments and Export to Single CSV"
 Write-Host "0: Exit"
 Write-Host ""
 
@@ -564,7 +565,7 @@ do {
             Write-Host "You selected: Fetch Configuration Profiles and Their Assigned Groups" -ForegroundColor Green
             $result = Get-AllConfigurationProfilesAndAssignedGroups
             $result | Out-Host
-            $result | Export-Csv AllConfigurationProfilesAndAssignedGroups.csv -Encoding UTF8 -NoTypeInformation
+            $result | Export-Csv C:\Temp\AllConfigurationProfilesAndAssignedGroups.csv -Encoding UTF8 -NoTypeInformation
         }
         2 {
             Write-Host "You selected: Fetch Compliance Policies and Their Assigned Groups" -ForegroundColor Green
@@ -602,6 +603,28 @@ do {
             $result | Out-Host
             $result | Export-Csv AllAppProtectionPoliciesAndAssignedGroups.csv -Encoding UTF8 -NoTypeInformation
         }
+        8 {
+            Write-Host "You selected: Fetch *All* Assignments and Export to Single CSV" -ForegroundColor Green
+
+            # 1. Gather all assignments
+            $allAssignments = @()
+            $allAssignments += Get-AllConfigurationProfilesAndAssignedGroups
+            $allAssignments += Get-AllCompliancePoliciesAndAssignedGroups
+            $allAssignments += Get-AllApplicationsAndAssignedGroups
+            $allAssignments += Get-AllRemediationScriptsAndAssignedGroups
+            $allAssignments += Get-AllPlatformScriptsAndAssignedGroups
+            $allAssignments += Get-AllMacOSShellScriptsAndAssignedGroups
+            $allAssignments += Get-AllAppProtectionPoliciesAndAssignedGroups
+
+            # 2. Output to console
+            $allAssignments | Out-Host
+
+            # 3. Export to CSV
+            $csvPath = "C:\Temp\AllIntuneAssignments.csv"
+            $allAssignments | Export-Csv $csvPath -Encoding UTF8 -NoTypeInformation
+
+            Write-Host "All assignments exported to $csvPath" -ForegroundColor Cyan
+        }
         0 {
             Write-Host "Exiting the tool. Goodbye!" -ForegroundColor Cyan
         }
@@ -626,7 +649,7 @@ do {
         Write-Host "5: Fetch Platform Scripts and Their Assigned Groups"
         Write-Host "6: Fetch macOS Shell Scripts and Their Assigned Groups"
         Write-Host "7: Fetch App Protection Policies and Their Assigned Groups"
+        Write-Host "8: Fetch *All* Assignments and Export to Single CSV"
         Write-Host "0: Exit"
     }
 } while ($userChoice -ne 0)
-
