@@ -1,3 +1,31 @@
+<#
+.SYNOPSIS
+    Intune Assignment Tool – fetches and visualizes assignments for various Intune entities via Microsoft Graph.
+
+.DESCRIPTION
+    This PowerShell script connects to Microsoft Graph using the Microsoft.Graph module to retrieve assignments for:
+      • Configuration Profiles
+      • Compliance Policies
+      • Mobile Applications
+      • Remediation (Device Health) Scripts
+      • Platform Scripts
+      • macOS Shell Scripts
+      • App Protection Policies
+    Results are returned as objects indicating the assignment mode (Included/Excluded), target group, and assignment type. The tool supports:
+      • Exporting individual or all assignment sets to CSV files.
+      • An interactive HTML network graph (Option 9) visualizing relationships between Intune objects and their target groups using PSWriteHTML.
+
+.PARAMETER Group.Read.All
+    Required Graph permission to read Azure AD group memberships and details.
+.PARAMETER DeviceManagement*.*
+    Required Graph permissions to read Intune device and policy configurations.
+
+.NOTES
+    - Interactive authentication via Connect-MgGraph is used; no credentials are hard-coded.
+    - Local output is written to C:\Temp\AssignTron and should be gitignored if needed.
+    - Option 9 regenerates a master CSV and launches an HTML diagram in the default browser.
+#>
+
 # Ensure AssignTron output folder exists
 $assignTronPath = "C:\Temp\AssignTron"
 if (-not (Test-Path -Path $assignTronPath)) {
