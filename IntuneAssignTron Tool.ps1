@@ -16,7 +16,7 @@
       • An interactive HTML network graph (Option 9) visualizing relationships between Intune objects and their target groups using PSWriteHTML.
 
 .PARAMETER Group.Read.All
-    Required Graph permission to read Azure AD group memberships and details.
+    Required Graph permission to read Entra ID group memberships and details.
 .PARAMETER DeviceManagement*.*
     Required Graph permissions to read Intune device and policy configurations.
 
