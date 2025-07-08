@@ -26,19 +26,6 @@ try {
 <#
 .SYNOPSIS
 Fetches all configuration profiles and their assigned groups, including handling built-in groups like "All Devices" and "All Users".
-
-.DESCRIPTION
-This function retrieves all configuration profiles from Intune, including configuration policies, device configurations,
-group policy configurations, and mobile app configurations. It checks each profile's assignments to determine
-which group it is assigned to, handles built-in assignment targets ("All Devices", "All Users"), and also processes
-exclusion assignments. Returns a list of profiles with their assigned group names and modes.
-
-.EXAMPLE
-$profileAssignments = Get-AllConfigurationProfilesAndAssignedGroups
-This example retrieves all configuration profiles and their assigned groups, storing the results in `$profileAssignments`.
-
-.NOTES
-Requires permissions: DeviceManagementConfiguration.Read.All, DeviceManagementConfiguration.ReadWrite.All, Group.Read.All.
 #>
 function Get-AllConfigurationProfilesAndAssignedGroups {
     Write-Host ">> Starting Get-AllConfigurationProfilesAndAssignedGroups" -ForegroundColor Cyan
@@ -71,14 +58,14 @@ function Get-AllConfigurationProfilesAndAssignedGroups {
                             $assignmentMode = 'Excluded'
                             $groupId        = $assignment.target.groupId
                             Write-Host "      – Excluded target, fetching group $groupId" -ForegroundColor Magenta
-                            $group = Invoke-MgGraphRequest -Uri "https://graph.microsoft.com/v1.0/groups/$groupId"
-                            $groupName = $group.displayName
+                            $group         = Invoke-MgGraphRequest -Uri "https://graph.microsoft.com/v1.0/groups/$groupId"
+                            $groupName     = $group.displayName
                         }
                         Default {
-                            $groupId  = $assignment.target.groupId
+                            $groupId    = $assignment.target.groupId
                             Write-Host "      – Fetching group details for $groupId" -ForegroundColor Gray
-                            $group    = Invoke-MgGraphRequest -Uri "https://graph.microsoft.com/v1.0/groups/$groupId"
-                            $groupName = $group.displayName
+                            $group      = Invoke-MgGraphRequest -Uri "https://graph.microsoft.com/v1.0/groups/$groupId"
+                            $groupName  = $group.displayName
                         }
                     }
                     Write-Host "      -> Adding [$assignmentMode] $profileName -> $groupName" -ForegroundColor Green
@@ -101,18 +88,7 @@ function Get-AllConfigurationProfilesAndAssignedGroups {
 
 <#
 .SYNOPSIS
-Fetches all compliance policies and their assigned groups, including handling built-in groups like "All Devices" and "All Users".
-
-.DESCRIPTION
-Retrieves all device compliance policies from Intune, checks each policy’s assignments (including all-devices,
-all-users, exclusions), and returns a list of policies with their assigned group names and modes.
-
-.EXAMPLE
-$complianceAssignments = Get-AllCompliancePoliciesAndAssignedGroups
-This example retrieves all compliance policies and their assigned groups into `$complianceAssignments`.
-
-.NOTES
-Requires permissions: DeviceManagementDeviceCompliancePolicy.Read.All, Group.Read.All.
+Fetches all compliance policies and their assigned groups.
 #>
 function Get-AllCompliancePoliciesAndAssignedGroups {
     Write-Host ">> Starting Get-AllCompliancePoliciesAndAssignedGroups" -ForegroundColor Cyan
@@ -138,7 +114,7 @@ function Get-AllCompliancePoliciesAndAssignedGroups {
                     $assignmentMode = 'Excluded'
                     $groupId        = $assignment.target.groupId
                     Write-Host "      – Excluded target, fetching group $groupId" -ForegroundColor Magenta
-                    $group = Invoke-MgGraphRequest -Uri "https://graph.microsoft.com/v1.0/groups/$groupId"
+                    $group     = Invoke-MgGraphRequest -Uri "https://graph.microsoft.com/v1.0/groups/$groupId"
                     $groupName = $group.displayName
                 }
                 else {
@@ -166,18 +142,7 @@ function Get-AllCompliancePoliciesAndAssignedGroups {
 
 <#
 .SYNOPSIS
-Fetches all mobile applications and their assigned groups in Intune.
-
-.DESCRIPTION
-Retrieves every mobile app configured in Intune, examines each assignment target (including all-devices, all-users,
-and exclusions), and returns a list of apps with assigned group names and modes.
-
-.EXAMPLE
-$appAssignments = Get-AllApplicationsAndAssignedGroups
-Stores all app-to-group assignments in `$appAssignments`.
-
-.NOTES
-Requires permissions: DeviceManagementApps.Read.All, Group.Read.All.
+Fetches all applications and their assigned groups.
 #>
 function Get-AllApplicationsAndAssignedGroups {
     Write-Host ">> Starting Get-AllApplicationsAndAssignedGroups" -ForegroundColor Cyan
@@ -203,7 +168,7 @@ function Get-AllApplicationsAndAssignedGroups {
                     $assignmentMode = 'Excluded'
                     $groupId        = $assignment.target.groupId
                     Write-Host "      – Excluded target, fetching group $groupId" -ForegroundColor Magenta
-                    $group = Invoke-MgGraphRequest -Uri "https://graph.microsoft.com/v1.0/groups/$groupId"
+                    $group     = Invoke-MgGraphRequest -Uri "https://graph.microsoft.com/v1.0/groups/$groupId"
                     $groupName = $group.displayName
                 }
                 else {
@@ -232,17 +197,6 @@ function Get-AllApplicationsAndAssignedGroups {
 <#
 .SYNOPSIS
 Fetches all remediation (device health) scripts and their assigned groups.
-
-.DESCRIPTION
-Retrieves every remediation (device health) script configured in Intune, examines each assignment
-(including all-devices, all-users, exclusions), and returns a list of scripts with assigned group names and modes.
-
-.EXAMPLE
-$remediationAssignments = Get-AllRemediationScriptsAndAssignedGroups
-Stores all remediation script assignments in `$remediationAssignments`.
-
-.NOTES
-Requires permissions: DeviceManagementDeviceHealthScript.Read.All, Group.Read.All.
 #>
 function Get-AllRemediationScriptsAndAssignedGroups {
     Write-Host ">> Starting Get-AllRemediationScriptsAndAssignedGroups" -ForegroundColor Cyan
@@ -268,7 +222,7 @@ function Get-AllRemediationScriptsAndAssignedGroups {
                     $assignmentMode = 'Excluded'
                     $groupId        = $assignment.target.groupId
                     Write-Host "      – Excluded target, fetching group $groupId" -ForegroundColor Magenta
-                    $group = Invoke-MgGraphRequest -Uri "https://graph.microsoft.com/v1.0/groups/$groupId"
+                    $group     = Invoke-MgGraphRequest -Uri "https://graph.microsoft.com/v1.0/groups/$groupId"
                     $groupName = $group.displayName
                 }
                 else {
@@ -296,18 +250,7 @@ function Get-AllRemediationScriptsAndAssignedGroups {
 
 <#
 .SYNOPSIS
-Fetches all device management (platform) scripts and their assigned groups.
-
-.DESCRIPTION
-Retrieves every device management script configured in Intune, checks assignments (all-devices,
-all-users, exclusions), and returns a list of scripts with assigned group names and modes.
-
-.EXAMPLE
-$platformAssignments = Get-AllPlatformScriptsAndAssignedGroups
-Stores all platform script assignments in `$platformAssignments`.
-
-.NOTES
-Requires permissions: DeviceManagementDeviceManagementScript.Read.All, Group.Read.All.
+Fetches all platform scripts and their assigned groups.
 #>
 function Get-AllPlatformScriptsAndAssignedGroups {
     Write-Host ">> Starting Get-AllPlatformScriptsAndAssignedGroups" -ForegroundColor Cyan
@@ -333,7 +276,7 @@ function Get-AllPlatformScriptsAndAssignedGroups {
                     $assignmentMode = 'Excluded'
                     $groupId        = $assignment.target.groupId
                     Write-Host "      – Excluded target, fetching group $groupId" -ForegroundColor Magenta
-                    $group = Invoke-MgGraphRequest -Uri "https://graph.microsoft.com/v1.0/groups/$groupId"
+                    $group     = Invoke-MgGraphRequest -Uri "https://graph.microsoft.com/v1.0/groups/$groupId"
                     $groupName = $group.displayName
                 }
                 else {
@@ -362,17 +305,6 @@ function Get-AllPlatformScriptsAndAssignedGroups {
 <#
 .SYNOPSIS
 Fetches all macOS shell scripts and their assigned groups.
-
-.DESCRIPTION
-Retrieves every macOS shell script configured in Intune, checks assignments (all-devices,
-all-users, exclusions), and returns a list of scripts with assigned group names and modes.
-
-.EXAMPLE
-$macosShellAssignments = Get-AllMacOSShellScriptsAndAssignedGroups
-Stores all macOS shell script assignments in `$macosShellAssignments`.
-
-.NOTES
-Requires permissions: DeviceManagementDeviceShellScript.Read.All, Group.Read.All.
 #>
 function Get-AllMacOSShellScriptsAndAssignedGroups {
     Write-Host ">> Starting Get-AllMacOSShellScriptsAndAssignedGroups" -ForegroundColor Cyan
@@ -398,7 +330,7 @@ function Get-AllMacOSShellScriptsAndAssignedGroups {
                     $assignmentMode = 'Excluded'
                     $groupId        = $assignment.target.groupId
                     Write-Host "      – Excluded target, fetching group $groupId" -ForegroundColor Magenta
-                    $group = Invoke-MgGraphRequest -Uri "https://graph.microsoft.com/v1.0/groups/$groupId"
+                    $group     = Invoke-MgGraphRequest -Uri "https://graph.microsoft.com/v1.0/groups/$groupId"
                     $groupName = $group.displayName
                 }
                 else {
@@ -426,18 +358,7 @@ function Get-AllMacOSShellScriptsAndAssignedGroups {
 
 <#
 .SYNOPSIS
-Fetches all App Protection Policies and their assigned groups, including multiple platforms.
-
-.DESCRIPTION
-Retrieves App Protection policies (iOS, Android, Windows, WIP) from Intune, examines each assignment
-(all-devices, all-users, exclusions), and returns a consolidated list of policies with group names and modes.
-
-.EXAMPLE
-$appProtectionAssignments = Get-AllAppProtectionPoliciesAndAssignedGroups
-Stores all app protection policy assignments in `$appProtectionAssignments`.
-
-.NOTES
-Requires permissions: DeviceAppManagement.Read.All, DeviceAppManagement.ReadWrite.All, Group.Read.All.
+Fetches all App Protection Policies and their assigned groups.
 #>
 function Get-AllAppProtectionPoliciesAndAssignedGroups {
     Write-Host ">> Starting Get-AllAppProtectionPoliciesAndAssignedGroups" -ForegroundColor Cyan
@@ -469,7 +390,7 @@ function Get-AllAppProtectionPoliciesAndAssignedGroups {
                         $assignmentMode = 'Excluded'
                         $groupId        = $assignment.target.groupId
                         Write-Host "      – Excluded target, fetching group $groupId" -ForegroundColor Magenta
-                        $group = Invoke-MgGraphRequest -Uri "https://graph.microsoft.com/v1.0/groups/$groupId"
+                        $group     = Invoke-MgGraphRequest -Uri "https://graph.microsoft.com/v1.0/groups/$groupId"
                         $groupName = $group.displayName
                     }
                     else {
@@ -498,17 +419,12 @@ function Get-AllAppProtectionPoliciesAndAssignedGroups {
 
 ## MAIN SCRIPT ##
 
-# Introductory Message
 Write-Host "====================================="
 Write-Host "Welcome to the Intune Assignment Tool"
 Write-Host "====================================="
 Write-Host ""
 Write-Host "This tool helps you retrieve and view the assignments for various Intune configurations."
-Write-Host "You can use this tool to fetch assignments for configuration profiles, compliance policies, applications, remediation scripts, platform scripts, macOS shell scripts, app configuration policies, and app protection policies."
-Write-Host "Each operation will display the profile/policy/script name along with the assigned group(s)."
-Write-Host "You can easily retrieve and review group assignments for multiple resources in Intune."
 Write-Host ""
-Write-Host "====================================="
 Write-Host "Select the operation you want to run:"
 Write-Host "====================================="
 Write-Host "1: Fetch Configuration Profiles and Their Assigned Groups"
@@ -519,6 +435,7 @@ Write-Host "5: Fetch Platform Scripts and Their Assigned Groups"
 Write-Host "6: Fetch macOS Shell Scripts and Their Assigned Groups"
 Write-Host "7: Fetch App Protection Policies and Their Assigned Groups"
 Write-Host "8: Fetch *All* Assignments and Export to Single CSV"
+Write-Host "9: Create & Open Interactive Network Graph"
 Write-Host "0: Exit"
 Write-Host ""
 
@@ -583,11 +500,80 @@ do {
             $allAssignments | Export-Csv $csvPath -Encoding UTF8 -NoTypeInformation
             Write-Host "All assignments exported to $csvPath" -ForegroundColor Cyan
         }
+        9 {
+            Write-Host "You selected: Create & Open Interactive Network Graph" -ForegroundColor Green
+
+            # 1) Ensure the master CSV is fresh:
+            $csvPath = "$assignTronPath\AllIntuneAssignments.csv"
+            if (Test-Path $csvPath) {
+                Write-Host "Existing CSV found—removing $csvPath" -ForegroundColor Yellow
+                Remove-Item $csvPath -Force
+            }
+
+            Write-Host "Regenerating assignments CSV via option 8 logic..." -ForegroundColor Yellow
+            $allAssignments = @()
+            $allAssignments += Get-AllConfigurationProfilesAndAssignedGroups
+            $allAssignments += Get-AllCompliancePoliciesAndAssignedGroups
+            $allAssignments += Get-AllApplicationsAndAssignedGroups
+            $allAssignments += Get-AllRemediationScriptsAndAssignedGroups
+            $allAssignments += Get-AllPlatformScriptsAndAssignedGroups
+            $allAssignments += Get-AllMacOSShellScriptsAndAssignedGroups
+            $allAssignments += Get-AllAppProtectionPoliciesAndAssignedGroups
+
+            $allAssignments | Export-Csv $csvPath -Encoding UTF8 -NoTypeInformation
+            Write-Host "New CSV written to $csvPath" -ForegroundColor Green
+
+            # 2) Build & show the graph:
+            Import-Module PSWriteHTML
+            Write-Host "Reading CSV from $csvPath" -ForegroundColor Yellow
+            $data     = Import-Csv -Path $csvPath
+            $profiles = $data | Select-Object -ExpandProperty Name              | Sort-Object -Unique
+            $groups   = $data | Select-Object -ExpandProperty AssignmentGroupName | Sort-Object -Unique
+
+            $htmlPath = "$assignTronPath\IntuneAssignmentsNetwork.html"
+            Write-Host "Generating HTML graph at $htmlPath" -ForegroundColor Yellow
+
+            New-HTML -TitleText 'Intune Assignments Network' `
+                     -Online `
+                     -FilePath  $htmlPath {
+                New-HTMLSection -HeaderText 'Network Graph' {
+                    New-HTMLPanel {
+                        New-HTMLDiagram -Height '800px' -Width '100%' {
+                            New-DiagramOptionsInteraction -Hover $true
+                            New-DiagramOptionsPhysics
+
+                            foreach ($p in $profiles) {
+                                New-DiagramNode -Id $p `
+                                                -Label $p `
+                                                -Shape dot `
+                                                -ColorBackground skyblue
+                            }
+                            foreach ($g in $groups) {
+                                New-DiagramNode -Id $g `
+                                                -Label $g `
+                                                -Shape square `
+                                                -ColorBackground salmon
+                            }
+                            foreach ($row in $data) {
+                                New-DiagramLink -From  $row.Name `
+                                                -To    $row.AssignmentGroupName `
+                                                -Label $row.AssignmentMode `
+                                                -ArrowsToEnabled `
+                                                -Color '#888888'
+                            }
+                        }
+                    }
+                }
+            } -ShowHTML
+
+            Write-Host "Launched graph in default browser." -ForegroundColor Green
+        }
         0 {
             Write-Host "Exiting the tool. Goodbye!" -ForegroundColor Cyan
+            break
         }
         Default {
-            Write-Host "Invalid selection. Please choose a number from 0 to 8." -ForegroundColor Red
+            Write-Host "Invalid selection. Please choose a number from 0 to 9." -ForegroundColor Red
         }
     }
 
@@ -608,6 +594,7 @@ do {
         Write-Host "6: Fetch macOS Shell Scripts and Their Assigned Groups"
         Write-Host "7: Fetch App Protection Policies and Their Assigned Groups"
         Write-Host "8: Fetch *All* Assignments and Export to Single CSV"
+        Write-Host "9: Create & Open Interactive Network Graph"
         Write-Host "0: Exit"
     }
 } while ($true)
